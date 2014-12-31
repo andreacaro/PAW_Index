@@ -54,12 +54,26 @@ def elabora_url(titolo,soup):
     except:
         pass
 
-# # # # #
+def insert_px (data, id, prezzo):
+    query='insert into Prezzi (Data, ID, Prezzo, FonteID) select %s,%s,%s,%s'
+    cur.execute(query,(data.strftime('%Y-%m-%d'), id, prezzo, 11))
+    #conn.commit()
+
+def insert_log (descrizione):
+    query='insert into Log (Data, Modulo, Descrizione) select %s,%s,%s'
+    cur.execute(query,(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), os.path.basename(__file__),descrizione))
+    #conn.commit()
+
+# # # # # # # # # # # # # # # # # # # # # # #
 # fine dichiarazione funzioni, inizio codice
-# # # # #
+# # # # # # # # # # # # # # # # # # # # # # #
 
 cur = conn.cursor()
-cur.execute("select c.id, a.isin from CompoIndici c left join AnagTitoli a on c.id=a.id where c.Data =(select max(Data) from CompoIndici)")
+# prima scrittura LOG
+insert_log('START')
+
+cur.execute("select a.id, a.isin from AnagTitoli a where a.Obsoleto=0") #check una tantum sull'anagrafica
+#cur.execute("select c.id, a.isin from CompoIndici c left join AnagTitoli a on c.id=a.id where c.Data =(select max(Data) from CompoIndici)")
 rows=cur.fetchall()
 
 #crea una lista di istanze oggetto titolo e la popola con id, isin e url
@@ -73,6 +87,7 @@ for i, tit in enumerate(ListaIds):
     try:
         url='http://www.borsaitaliana.it/borsa/azioni/scheda.html?isin=' + tit.isin + '&lang=it'
     except TypeError:
+        insert_log('errore con id ' + str(tit.id))
         print 'errore con id ' + str(tit.id)
         print 'prob. ID non in anagrafica'
         continue
@@ -83,6 +98,7 @@ for i, tit in enumerate(ListaIds):
     if soup==None or len(soup)==1:
         # print 'errore con id ' + tit.id
         # pagina non caricata
+        insert_log('mancato caricamento pagina id ' + str(tit.id))
         PageLoaded=0
         query='insert into LogScraper (DataEx, Module, ID, Isin, url, PageLoaded) select %s,%s,%s,%s,%s,%s'
         cur.execute(query,(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), os.path.basename(__file__),tit.id, tit.isin, url, PageLoaded))
@@ -95,8 +111,14 @@ for i, tit in enumerate(ListaIds):
             cur.execute(query,(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), os.path.basename(__file__),tit.id, tit.isin, url, PageLoaded, 1))
 
             # essendo l'IF in cui è tutto ok oltre a popolare log carico anche i prezzi
-            query='insert into Prezzi (Data, ID, Prezzo, Fonte) select %s,%s,%s,%s'
-            cur.execute(query,(tit.data.strftime('%Y-%m-%d'), tit.id, tit.prezzo, os.path.basename(__file__)))
+            try:
+                insert_px(tit.data,tit.id, tit.prezzo)
+            except:
+                insert_log('errore generico su insert id ' + str(tit.id))
+                print 'errore generico su insert'  + str(tit.id)
+                continue
+            #query='insert into Prezzi (Data, ID, Prezzo, Fonte) select %s,%s,%s,%s'
+            #cur.execute(query,(tit.data.strftime('%Y-%m-%d'), tit.id, tit.prezzo, os.path.basename(__file__)))
 
         else:
             query='insert into LogScraper (DataEx, Module, ID, Isin, url, PageLoaded) select %s,%s,%s,%s,%s,%s'
@@ -108,3 +130,6 @@ for i, tit in enumerate(ListaIds):
     cur.fetchall()
     conn.commit()
 
+# fine scrittura LOG
+insert_log('END')
+conn.commit()
